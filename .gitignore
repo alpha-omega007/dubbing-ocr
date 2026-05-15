@@ -1,2 +1,20 @@
+# Media and large files
+output/
+media/
+models/
 *.mp4
+*.wav
+*.srt
+*.zip
+*.onnx
+*.bin
+
+# Temporary files
+/tmp/
+__pycache__/
+*.log
+
+# Project specific
+tools/
+pyvideotrans/
 source.md

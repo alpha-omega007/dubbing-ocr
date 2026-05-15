@@ -11,10 +11,11 @@ Téléchargement HLS + transcription + TTS genré (homme/femme) 100% local.
 
 | Fichier | Rôle |
 |---|---|
-| `full_pipeline.py` | Script maître (téléchargement + doublage) |
+| `main.py` | Nouveau point d'entrée modulaire (Clean Architecture) |
+| `video_dubbing_pipeline.py` | Script monolithique optimisé (recommandé pour usage direct) |
 | `download_hls.py` | Téléchargement segments HLS (.ts) → MP4 |
-| `video_dubbing_pipeline.py` | Doublage (diarization + TTS genré) |
 | `install_dubbing.sh` | Installation des dépendances |
+| `tools/VideoSubFinder/` | Outil requis pour l'OCR (sous-titres incrustés) |
 
 ---
 
@@ -86,12 +87,24 @@ python3 full_pipeline.py \
 ### Doublage seul (si vidéo déjà téléchargée)
 
 ```bash
+# 100% local avec Whisper (par défaut)
 python3 video_dubbing_pipeline.py \
-  --input video_assembled.mp4 \
+  --input video.mp4 \
   --hf_token hf_XXXXXXXXXXXXXXX \
   --lang fr
 
-# Résultat : video_assembled_dubbed.mp4
+# Via OCR (pour les vidéos avec sous-titres incrustés, sans diarization)
+python3 video_dubbing_pipeline.py --input video.mp4 --ocr --lang fr
+
+# Avec traduction automatique (ex: Japonais -> Français)
+python3 video_dubbing_pipeline.py --input video.mp4 --src-lang ja --tgt-lang fr --hf_token hf_XXX
+
+# Doublage par morceaux (Séquentiel) - Recommandé pour les vidéos > 10 min
+# Découpe la vidéo en blocs de 20s, les traite, puis les fusionne (très robuste)
+python3 main.py --input video.mp4 --ocr --lang fr --chunk 20
+
+# Limiter l'usage GPU (ex: 25%) et utiliser Edge TTS (Cloud haute qualité)
+python3 main.py --input video.mp4 --gpu_limit 0.25 --tts-engine edge
 ```
 
 ### Téléchargement seul (sans doublage)
@@ -121,15 +134,21 @@ python3 download_hls.py \
 | `--threads` | `4` | Téléchargements parallèles |
 | `--keep_tmp` | off | Garder les fichiers intermédiaires |
 
-### `video_dubbing_pipeline.py`
+### `main.py` (Architecture Modulaire)
 
 | Option | Défaut | Description |
 |---|---|---|
 | `--input` | *(requis)* | Vidéo source |
-| `--hf_token` | *(requis)* | Token Hugging Face |
-| `--output` | `*_dubbed.mp4` | Fichier de sortie |
-| `--lang` | auto | Langue Whisper |
-| `--keep_tmp` | off | Garder les fichiers temporaires (utile pour debug) |
+| `--hf_token` | None | Requis uniquement pour Diarization (pyannote) |
+| `--output` | `output/...` | Dossier/Fichier de sortie |
+| `--lang` | `fr` | Langue Whisper / OCR |
+| `--tgt-lang` | None | Langue cible (active la traduction si présent) |
+| `--ocr` | off | Utilise VideoSubFinder + EasyOCR (plus stable) |
+| `--chunk` | `20` | **Séquentiel** : découpe en blocs de X secondes (recommandé: 20) |
+| `--skip-chunks` | `0` | Saute les X premiers blocs (utile pour reprendre après un crash) |
+| `--tts-engine` | `kokoro` | `kokoro` (local léger), `melo` (local pro), `edge` (cloud premium) |
+| `--gpu_limit` | `0.5` | Limite de VRAM (0.1 à 1.0) |
+| `--sample` | None | Test sur une plage (ex: `120:150`) |
 
 ---
 
@@ -140,11 +159,12 @@ seg-1 → seg-2 → ... → 404 (5 échecs consécutifs = arrêt auto)
         ↓
   video_assembled.mp4
         ↓
-  pyannote  →  qui parle à quel moment
-  pitch F0  →  détection homme (< 165 Hz) / femme (≥ 165 Hz)
-  Whisper   →  transcription avec timestamps
-  Kokoro    →  synthèse voix ♂ (am_adam) / ♀ (af_sarah)
-  ffmpeg    →  retire voix originale + insère TTS synchronisé
+  pyannote / OCR  →  qui parle ou quel texte est affiché
+  pitch F0        →  détection genre (si Whisper)
+  Whisper / OCR   →  extraction du texte (transcription ou lecture)
+  Helsinki-NLP    →  traduction (si --tgt-lang est utilisé)
+  Kokoro/Melo/Edge→  synthèse vocale synchronisée
+  ffmpeg          →  mixage audio (ducking) + assemblage final
         ↓
   video_dubbed.mp4 ✅
 ```
@@ -157,19 +177,20 @@ seg-1 → seg-2 → ... → 404 (5 échecs consécutifs = arrêt auto)
 |---|---|
 | Téléchargement HLS | ~5-15 min (réseau) |
 | Diarization pyannote | ~15-20 min |
-| Transcription Whisper medium | ~25-35 min |
-| TTS Kokoro (CPU) | ~20-30 min |
+| Transcription Whisper small | ~10-15 min |
+| Traduction Helsinki | ~2-5 min |
+| TTS Kokoro (CPU) | ~15-20 min |
 | Muxing ffmpeg | ~2-3 min |
-| **Total** | **~1h à 1h30** |
+| **Total** | **~45 min à 1h** |
 
 ---
 
 ## ⚠️ Notes importantes
 
 - Les URLs HLS sont signées et **expirent** (`e=43200` = 12h) — lancer le téléchargement rapidement
-- Arrêter Ollama avant de lancer (`sudo systemctl stop ollama`) pour libérer 2 Go de VRAM
-- Whisper `large-v3` est trop lourd pour 4 Go VRAM → on utilise `medium`
-- Les modèles sont chargés **séquentiellement** (jamais deux en même temps) pour rester dans les 4 Go
+- **Brider le GPU** : Pour éviter que le PC ne rame ou ne chauffe, lancez `sudo nvidia-smi -pl 25` (limite la puissance à 25W).
+- **VRAM** : Le script limite par défaut l'usage à 50% de la VRAM totale.
+- **Modèles** : Whisper `small` est utilisé par défaut pour la vitesse. Utilisez `medium` dans le code pour plus de précision.
 
 ---
 
