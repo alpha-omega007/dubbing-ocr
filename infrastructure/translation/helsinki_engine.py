@@ -24,5 +24,7 @@ class HelsinkiTranslationEngine(ITranslationEngine):
             with torch.no_grad():
                 outputs = model.generate(**inputs)
             seg.text_original = seg.text
-            seg.text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            translated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            seg.text = translated_text
         return segments

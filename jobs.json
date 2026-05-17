@@ -1,0 +1,106 @@
+{
+  "f001f199_151713": {
+    "id": "f001f199_151713",
+    "input_name": "test_5s.mp4",
+    "source_type": "upload",
+    "status": "completed",
+    "created_at": "2026-05-17T15:17:13.286214",
+    "params": {
+      "hf_token": null,
+      "lang": "fr",
+      "tgt_lang": null,
+      "ocr": true,
+      "tts_engine": "edge",
+      "chunk": 20,
+      "gpu_limit": 0.5,
+      "threads": 1,
+      "skip_chunks": 0,
+      "sample": null,
+      "clone_voice": false
+    },
+    "progress": {
+      "percentage": 92,
+      "active_step_index": 4,
+      "current_step_desc": "Mixage audio final & assemblage vidéo..."
+    },
+    "processing_duration": 9.817600727081299,
+    "output_filename": "f001f199_151713_dubbed.mp4",
+    "output_size_bytes": 374835
+  },
+  "f8fda355_152013": {
+    "id": "f8fda355_152013",
+    "input_name": "videoplayback",
+    "source_type": "link",
+    "status": "failed",
+    "created_at": "2026-05-17T15:20:13.587408",
+    "params": {
+      "hf_token": "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",
+      "lang": "fr",
+      "tgt_lang": null,
+      "ocr": false,
+      "tts_engine": "edge",
+      "chunk": 20,
+      "gpu_limit": 0.5,
+      "threads": 1,
+      "skip_chunks": 0,
+      "sample": null
+    },
+    "progress": {
+      "percentage": 5,
+      "active_step_index": 0,
+      "current_step_desc": "Téléchargement & assemblage HLS..."
+    },
+    "processing_duration": 0.7109115123748779,
+    "error_message": "Le téléchargement HLS a échoué avec le code retour 1"
+  },
+  "e352c92c_152550": {
+    "id": "e352c92c_152550",
+    "input_name": "seg-7{i}-v1-a1.ts",
+    "source_type": "link",
+    "status": "failed",
+    "created_at": "2026-05-17T15:25:50.527481",
+    "params": {
+      "hf_token": "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",
+      "lang": "fr",
+      "tgt_lang": "fr",
+      "ocr": false,
+      "tts_engine": "edge",
+      "chunk": 20,
+      "gpu_limit": 0.5,
+      "threads": 1,
+      "skip_chunks": 0,
+      "sample": null
+    },
+    "progress": {
+      "percentage": 50,
+      "active_step_index": 2,
+      "current_step_desc": "Transcription Whisper (Extraction texte)..."
+    },
+    "processing_duration": 40.997950077056885,
+    "error_message": "Le pipeline de doublage a crashé avec le code retour 1"
+  },
+  "8526dc72_153439": {
+    "id": "8526dc72_153439",
+    "input_name": "twoworld.mp4",
+    "source_type": "upload",
+    "status": "running",
+    "created_at": "2026-05-17T15:34:40.063981",
+    "params": {
+      "hf_token": "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",
+      "lang": "fr",
+      "tgt_lang": "fr",
+      "ocr": false,
+      "tts_engine": "edge",
+      "chunk": 20,
+      "gpu_limit": 0.5,
+      "threads": 1,
+      "skip_chunks": 0,
+      "sample": null
+    },
+    "progress": {
+      "percentage": 50,
+      "active_step_index": 2,
+      "current_step_desc": "Transcription Whisper (Extraction texte)..."
+    }
+  }
+}

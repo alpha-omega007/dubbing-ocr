@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎬 Pipeline Doublage Vidéo IA Local</title>
+  <!-- Google Fonts & FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- 1. Header with Logo & System Metrics -->
+    <header class="app-header glass-panel">
+      <div class="logo-section">
+        <i class="fa-solid fa-wand-magic-sparkles logo-icon"></i>
+        <div class="logo-text">
+          <h1>Studio de Doublage IA</h1>
+          <p>Traduction, Diarisation & Synthèse Vocale 100% Locale</p>
+        </div>
+      </div>
+      
+      <div class="system-monitors">
+        <div class="monitor-item" id="cpu-monitor">
+          <div class="monitor-dot active"></div>
+          <span class="monitor-label">CPU:</span>
+          <span class="monitor-value" id="cpu-val">0%</span>
+        </div>
+        <div class="monitor-item" id="gpu-monitor">
+          <div class="monitor-dot" id="gpu-dot"></div>
+          <span class="monitor-label">GPU/VRAM:</span>
+          <span class="monitor-value" id="gpu-val">Non Détecté</span>
+        </div>
+        <div class="monitor-item">
+          <span class="monitor-label">Statut :</span>
+          <span class="monitor-value" id="server-status" style="color: var(--success);">En Ligne</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. Main Dashboard Grid -->
+    <main class="dashboard-grid">
+      
+      <!-- LEFT COLUMN: Configurations & Submission Form -->
+      <aside class="submission-panel glass-panel">
+        <div class="section-title">
+          <i class="fa-solid fa-sliders"></i>
+          <h2>Configuration du Doublage</h2>
+        </div>
+
+        <form id="dubbing-form" onsubmit="submitJob(event)">
+          <!-- Source Video Tabs (Upload or Link) -->
+          <div class="form-group">
+            <label><i class="fa-solid fa-video"></i> Source de la Vidéo</label>
+            <div class="tab-container">
+              <button type="button" class="tab-btn active" onclick="switchSourceTab('upload')">
+                <i class="fa-solid fa-file-arrow-up"></i> Upload Local
+              </button>
+              <button type="button" class="tab-btn" onclick="switchSourceTab('link')">
+                <i class="fa-solid fa-link"></i> Lien URL / HLS
+              </button>
+            </div>
+          </div>
+
+          <!-- TAB CONTENT: FILE UPLOAD -->
+          <div id="source-upload-content" class="tab-content active">
+            <div class="form-group">
+              <div class="dropzone" id="dropzone" onclick="document.getElementById('video-file-input').click()">
+                <i class="fa-solid fa-cloud-arrow-up dropzone-icon"></i>
+                <div class="dropzone-text">
+                  Glissez-déposez votre vidéo MP4 ici ou <span>parcourez vos fichiers</span>
+                </div>
+                <input type="file" id="video-file-input" name="video_file" accept="video/mp4,video/x-matroska,video/*" style="display: none;" onchange="handleFileSelected(event)">
+              </div>
+              
+              <!-- File Info Display when selected -->
+              <div class="file-selected-indicator" id="file-indicator">
+                <div class="file-info">
+                  <i class="fa-solid fa-file-video"></i>
+                  <div>
+                    <div class="file-name" id="selected-file-name">nom_de_la_video.mp4</div>
+                    <div class="file-size" id="selected-file-size">0.0 Mo</div>
+                  </div>
+                </div>
+                <button type="button" class="remove-file-btn" onclick="clearSelectedFile()"><i class="fa-solid fa-circle-xmark"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB CONTENT: LINK DOWNLOAD -->
+          <div id="source-link-content" class="tab-content">
+            <div class="form-group">
+              <label for="video-url">URL de la Vidéo / Template HLS</label>
+              <div class="input-desc">Supporte les liens MP4 directs ou les feeds HLS avec token segmenté {i}.</div>
+              <div class="input-wrapper">
+                <i class="fa-solid fa-globe"></i>
+                <input type="url" id="video-url" name="video_url" class="form-input" placeholder="https://example.com/video.mp4 ou https://.../seg-{i}.ts?t=...">
+              </div>
+            </div>
+          </div>
+
+          <!-- Form Fields for parameters -->
+          <div class="form-group">
+            <label for="hf-token"><i class="fa-solid fa-key"></i> Token Hugging Face (Diarization)</label>
+            <div class="input-desc">Requis uniquement si la Diarization vocale (pyannote) est activée.</div>
+            <div class="input-wrapper">
+              <i class="fa-solid fa-lock"></i>
+              <input type="password" id="hf-token" name="hf_token" class="form-input" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+              <i class="fa-solid fa-eye-slash" id="toggle-hf-visibility" style="left: auto; right: 14px; cursor: pointer;" onclick="togglePasswordVisibility('hf-token', this)"></i>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 5px;">
+              <input type="checkbox" id="remember-token" checked style="cursor: pointer;">
+              <label for="remember-token" style="font-size: 0.75rem; color: var(--text-sub); font-weight: normal; cursor: pointer;">Mémoriser ce token localement</label>
+            </div>
+          </div>
+
+          <!-- Language Settings -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div class="form-group">
+              <label for="src-lang"><i class="fa-solid fa-language"></i> Langue Source</label>
+              <select id="src-lang" name="lang" class="form-input">
+                <option value="fr" selected>Français (fr)</option>
+                <option value="en">Anglais (en)</option>
+                <option value="es">Espagnol (es)</option>
+                <option value="de">Allemand (de)</option>
+                <option value="it">Italien (it)</option>
+                <option value="ja">Japonais (ja)</option>
+                <option value="zh">Chinois (zh)</option>
+                <option value="ru">Russe (ru)</option>
+                <option value="pt">Portugais (pt)</option>
+                <option value="">Auto-détection Whisper</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="tgt-lang"><i class="fa-solid fa-globe"></i> Langue Cible</label>
+              <select id="tgt-lang" name="tgt_lang" class="form-input">
+                <option value="" selected>Identique (Doublage pur)</option>
+                <option value="fr">Français (Traduction)</option>
+                <option value="en">Anglais (Traduction)</option>
+                <option value="es">Espagnol (Traduction)</option>
+                <option value="de">Allemand (Traduction)</option>
+                <option value="it">Italien (Traduction)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Diarization vs OCR Toggle -->
+          <div class="toggle-switch-container">
+            <div class="toggle-details">
+              <div class="toggle-title">Activer l'OCR (Sous-titres)</div>
+              <div class="toggle-desc">Extrait le texte des sous-titres incrustés plutôt que d'analyser les voix.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="use-ocr" name="ocr" onchange="toggleOCRMode(this.checked)">
+              <span class="slider-toggle"></span>
+            </label>
+          </div>
+
+          <!-- TTS Engine Selector -->
+          <div class="form-group">
+            <label><i class="fa-solid fa-bullhorn"></i> Moteur de Synthèse Vocale (TTS)</label>
+            <div class="tts-cards-container">
+              <div class="tts-card active" id="card-kokoro" onclick="selectTtsEngine('kokoro')">
+                <i class="fa-solid fa-robot tts-card-icon"></i>
+                <div class="tts-card-title">Kokoro</div>
+                <span class="tts-card-tag local">Local Léger</span>
+              </div>
+              <div class="tts-card" id="card-edge" onclick="selectTtsEngine('edge')">
+                <i class="fa-solid fa-cloud-arrow-down tts-card-icon"></i>
+                <div class="tts-card-title">Edge TTS</div>
+                <span class="tts-card-tag cloud">Cloud HD</span>
+              </div>
+              <div class="tts-card" id="card-melo" onclick="selectTtsEngine('melo')">
+                <i class="fa-solid fa-microphone-lines tts-card-icon"></i>
+                <div class="tts-card-title">MeloTTS</div>
+                <span class="tts-card-tag local">Local Pro</span>
+              </div>
+            </div>
+            <input type="hidden" id="tts-engine" name="tts_engine" value="kokoro">
+          </div>
+
+          <!-- Advanced Parameters Collapsible Accordion -->
+          <div class="advanced-accordion">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+              <span><i class="fa-solid fa-gears" style="margin-right: 8px;"></i> Paramètres Avancés Pipeline</span>
+              <i class="fa-solid fa-chevron-down accordion-icon"></i>
+            </div>
+            <div class="accordion-body">
+              <!-- Voice Cloning Toggle -->
+              <div class="toggle-switch-container" style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
+                <div class="toggle-details">
+                  <div class="toggle-title"><i class="fa-solid fa-microphone-lines" style="color: var(--secondary); margin-right: 6px;"></i> Timbre de Voix Original</div>
+                  <div class="toggle-desc">Clone le timbre (couleur de voix) de chaque locuteur original avec OpenVoice.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="clone-voice" name="clone_voice">
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <!-- Sequential Chunk slider -->
+              <div class="slider-container">
+                <div class="slider-header">
+                  <label for="chunk-duration">Durée des chunks de découpe</label>
+                  <span class="slider-val" id="chunk-duration-val">20s</span>
+                </div>
+                <input type="range" id="chunk-duration" name="chunk" min="10" max="60" step="5" value="20" class="slider-input" oninput="document.getElementById('chunk-duration-val').textContent = this.value + 's'">
+              </div>
+
+              <!-- VRAM Memory limit fraction slider -->
+              <div class="slider-container">
+                <div class="slider-header">
+                  <label for="gpu-limit">Limite de VRAM GPU autorisée</label>
+                  <span class="slider-val" id="gpu-limit-val">50%</span>
+                </div>
+                <input type="range" id="gpu-limit" name="gpu_limit" min="10" max="100" step="5" value="50" class="slider-input" oninput="document.getElementById('gpu-limit-val').textContent = this.value + '%'">
+              </div>
+
+              <!-- Thread pool count -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <div class="form-group">
+                  <label for="threads">Threads de traitement</label>
+                  <input type="number" id="threads" name="threads" class="form-input" style="padding-left: 15px;" min="1" max="8" value="1">
+                </div>
+                
+                <div class="form-group">
+                  <label for="skip-chunks">Chunks à ignorer</label>
+                  <input type="number" id="skip-chunks" name="skip_chunks" class="form-input" style="padding-left: 15px;" min="0" value="0">
+                </div>
+              </div>
+
+              <!-- Test Mode / Sample start:end -->
+              <div class="form-group">
+                <label for="sample">Échantillon de test (START:END)</label>
+                <div class="input-desc">Format secondes. Ex: "0:15" pour ne doubler que les 15 premières secondes.</div>
+                <div class="input-wrapper">
+                  <i class="fa-solid fa-flask"></i>
+                  <input type="text" id="sample" name="sample" class="form-input" placeholder="Ex: 0:15">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Submission Button -->
+          <button type="submit" id="submit-job-btn" class="submit-btn" style="width: 100%;">
+            <i class="fa-solid fa-circle-play"></i> Démarrer le Doublage
+          </button>
+        </form>
+      </aside>
+
+      <!-- RIGHT COLUMN: Console Logs, Video Player & Job History -->
+      <section class="display-panel">
+        
+        <!-- A. Pipeline Progress & Status Monitor (Visible when job runs) -->
+        <div class="status-tracker-box glass-panel" id="status-tracker">
+          <div class="status-header">
+            <div class="status-title-group">
+              <h3 id="running-job-title" style="font-family: var(--font-display); font-weight: 600;">Traitement de la vidéo</h3>
+            </div>
+            <span class="status-badge running" id="running-status-badge">Doublage en cours</span>
+          </div>
+
+          <div class="progress-overall">
+            <div class="progress-header-info">
+              <span id="current-step-label">Initialisation du pipeline...</span>
+              <span id="progress-percentage-label">0%</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" id="progress-bar-fill"></div>
+            </div>
+          </div>
+
+          <div class="pipeline-steps">
+            <div class="step-indicator" id="step-dl">
+              <i class="fa-solid fa-download"></i>
+              <span>Download</span>
+            </div>
+            <div class="step-indicator" id="step-diar">
+              <i class="fa-solid fa-microphone-lines"></i>
+              <span>Diarization</span>
+            </div>
+            <div class="step-indicator" id="step-trans">
+              <i class="fa-solid fa-closed-captioning"></i>
+              <span>Whisper/OCR</span>
+            </div>
+            <div class="step-indicator" id="step-tts">
+              <i class="fa-solid fa-volume-high"></i>
+              <span>TTS</span>
+            </div>
+            <div class="step-indicator" id="step-mux">
+              <i class="fa-solid fa-compact-disc"></i>
+              <span>Mixage</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- B. Video Player (Visible when job is successful) -->
+        <div class="video-player-box glass-panel" id="video-result-box">
+          <div class="video-container">
+            <video id="result-video-player" controls>
+              <source id="result-video-source" src="" type="video/mp4">
+              Votre navigateur ne supporte pas la lecture vidéo.
+            </video>
+          </div>
+          
+          <div class="video-meta-section">
+            <div>
+              <h4 class="video-details-title" id="result-video-title">Titre du Fichier</h4>
+              <p class="video-details-specs" id="result-video-specs">Format: MP4 | Traitement: 4m 12s</p>
+            </div>
+            <div class="action-btn-group">
+              <button class="secondary-btn" onclick="shareLocalDubLink()"><i class="fa-solid fa-share-nodes"></i> Copier le lien</button>
+              <a id="result-download-link" href="#" download class="secondary-btn primary-style"><i class="fa-solid fa-download"></i> Télécharger</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- C. Real-Time Terminal Logs -->
+        <div class="terminal-card glass-panel">
+          <div class="terminal-header">
+            <div class="terminal-title">
+              <i class="fa-solid fa-terminal" style="color: var(--secondary);"></i> CONSOLE PIPELINE LOGS
+            </div>
+            <div class="terminal-controls">
+              <button class="history-action-btn" onclick="clearTerminal()" title="Effacer la console"><i class="fa-solid fa-trash-can"></i></button>
+              <div class="terminal-control-dot red"></div>
+              <div class="terminal-control-dot yellow"></div>
+              <div class="terminal-control-dot green"></div>
+            </div>
+          </div>
+          <div class="terminal-body" id="terminal-body"><div class="terminal-line info">📟 Système de doublage local en attente de soumission...</div></div>
+        </div>
+
+        <!-- D. Job History List -->
+        <div class="history-panel glass-panel">
+          <div class="history-header">
+            <h3 style="font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-clock-history" style="color: var(--secondary);"></i> Historique des Tâches
+            </h3>
+            <button class="secondary-btn" style="padding: 4px 10px; font-size: 0.75rem;" onclick="loadJobHistory()"><i class="fa-solid fa-arrows-rotate"></i> Rafraîchir</button>
+          </div>
+          
+          <div class="history-list" id="history-list">
+            <!-- Empty state loader or dynamic items will be injected here -->
+            <div class="history-empty-state">
+              <i class="fa-solid fa-folder-open"></i>
+              <span>Aucune tâche enregistrée pour le moment.</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+      
+    </main>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

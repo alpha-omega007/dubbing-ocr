@@ -1,4 +1,9 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import os
+os.environ["TRITON_INTERPRET"] = "1"
+
 import argparse
 import tempfile
 import shutil
@@ -36,6 +41,7 @@ def main():
     parser.add_argument("--tts-engine", default="kokoro", choices=["kokoro", "edge", "melo"], help="Moteur TTS")
     parser.add_argument("--skip-chunks", "--skip_chunks", type=int, default=0, help="Nombre de blocs à sauter au début")
     parser.add_argument("--threads", type=int, default=1, help="Nombre de chunks à traiter en parallèle (recommandé: 1 ou 2)")
+    parser.add_argument("--clone-voice", "--clone_voice", action="store_true", help="Cloner le timbre de la voix originale avec OpenVoice")
     args = parser.parse_args()
     limit_gpu_memory(args.gpu_limit)
 
@@ -47,16 +53,53 @@ def main():
     
     # TTS Selection
     if args.tts_engine == "edge":
-        from infrastructure.tts.edge_engine import EdgeTTSEngine
-        tts_engine = EdgeTTSEngine()
+        try:
+            from infrastructure.tts.edge_engine import EdgeTTSEngine
+            tts_engine = EdgeTTSEngine()
+        except ImportError as e:
+            print("\n" + "="*60)
+            print("❌ ERREUR : Le moteur Edge TTS a rencontré une erreur d'importation.")
+            print(f"   Détail: {e}")
+            print("👉 Pour l'utiliser, installez les dépendances requises :")
+            print("   pip install edge-tts --break-system-packages")
+            print("💡 Alternative : Utilisez --tts-engine kokoro (local léger)")
+            print("="*60 + "\n")
+            sys.exit(1)
     elif args.tts_engine == "melo":
-        from infrastructure.tts.melo_engine import MeloTTSEngine
-        tts_engine = MeloTTSEngine()
+        try:
+            from infrastructure.tts.melo_engine import MeloTTSEngine
+            tts_engine = MeloTTSEngine()
+        except Exception as e:
+            print("\n" + "="*60)
+            err_msg = str(e)
+            if "unidic" in err_msg.lower() or "mecab" in err_msg.lower():
+                print("❌ ERREUR : Le dictionnaire japonais de MeCab (unidic) est manquant pour MeloTTS.")
+                print(f"   Détail: {e}")
+                print("👉 Pour le télécharger et l'activer, lancez cette commande dans votre terminal :")
+                print("   python3 -m unidic download")
+            else:
+                print("❌ ERREUR : Le moteur MeloTTS ou l'une de ses dépendances n'est pas installé.")
+                print(f"   Détail: {e}")
+                print("👉 Pour l'utiliser, installez MeloTTS :")
+                print("   pip install melotts --break-system-packages")
+            print("💡 Alternative : Utilisez --tts-engine kokoro (local léger) ou --tts-engine edge (cloud HD)")
+            print("="*60 + "\n")
+            sys.exit(1)
     else:
-        from infrastructure.tts.kokoro_engine import KokoroTTSEngine
-        onnx_path = "./models/kokoro-v1.0.onnx"
-        voices_path = "./models/voices-v1.0.bin"
-        tts_engine = KokoroTTSEngine(onnx_path, voices_path)
+        try:
+            from infrastructure.tts.kokoro_engine import KokoroTTSEngine
+            onnx_path = "./models/kokoro-v1.0.onnx"
+            voices_path = "./models/voices-v1.0.bin"
+            tts_engine = KokoroTTSEngine(onnx_path, voices_path)
+        except ImportError as e:
+            print("\n" + "="*60)
+            print("❌ ERREUR : Le moteur Kokoro ONNX a rencontré une erreur d'importation.")
+            print(f"   Détail: {e}")
+            print("👉 Pour l'utiliser, installez kokoro-onnx :")
+            print("   pip install kokoro-onnx --break-system-packages")
+            print("💡 Alternative : Utilisez --tts-engine edge (cloud HD)")
+            print("="*60 + "\n")
+            sys.exit(1)
     
     diarization_service = PyannoteDiarizationService()
 
@@ -103,28 +146,37 @@ def main():
             
             chunk_indices = [i for i in range(len(range(0, int(total_duration), args.chunk)))]
             chunk_outputs = [None] * len(chunk_indices)
+            overlap = 2.0 # secondes d'overlap pour éviter les coupures au bord
 
             def process_chunk(i):
-                start = i * args.chunk
+                start_orig = i * args.chunk
                 if i < args.skip_chunks:
                     print(f"⏭️ Saut du bloc {i+1}")
                     return None
                     
-                end = min(start + args.chunk, total_duration)
+                # Calcul des fenêtres avec overlap
+                clip_start = max(0, start_orig - overlap)
+                clip_end = min(total_duration, start_orig + args.chunk + overlap)
+                
+                # Le "range" valide dans ce clip (en secondes relatives au clip)
+                f_start = start_orig - clip_start
+                f_end = f_start + args.chunk
+                if i == len(chunk_indices) - 1: f_end = 999999 # Jusqu'à la fin pour le dernier
+                
                 chunk_tmp = os.path.join(tmp_dir, f"chunk_{i}")
                 os.makedirs(chunk_tmp, exist_ok=True)
                 
                 clip_in = os.path.join(chunk_tmp, f"in_{i}.mp4")
                 clip_out = os.path.join(chunk_tmp, f"out_{i}.mp4")
                 
-                print(f"📦 Bloc {i+1} : {start}s → {end}s")
-                # Extraire le clip
+                print(f"📦 Bloc {i+1} : {start_orig}s → {min(start_orig + args.chunk, total_duration)}s (avec overlap)")
+                # Extraire le clip avec overlap
                 subprocess.run([
-                    "ffmpeg", "-y", "-ss", str(start), "-i", args.input,
-                    "-t", str(end-start), "-c", "copy", clip_in
+                    "ffmpeg", "-y", "-ss", str(clip_start), "-i", args.input,
+                    "-t", str(clip_end - clip_start), "-c", "copy", clip_in
                 ], capture_output=True)
                 
-                # Doubler le clip
+                # Doubler le clip avec filtrage
                 pipeline.run(
                     video_path=clip_in,
                     tmp_dir=chunk_tmp,
@@ -133,9 +185,20 @@ def main():
                     tgt_lang=args.tgt_lang,
                     use_ocr=args.ocr,
                     output_path=clip_out,
-                    chunk_duration=args.chunk
+                    chunk_duration=args.chunk,
+                    filter_range=(f_start, f_end),
+                    clone_voice=args.clone_voice
                 )
-                return clip_out
+                
+                # Recouper le clip final pour enlever l'overlap et ne garder que la partie propre
+                # On utilise -ss f_start -t chunk_size pour ne garder que le bloc utile
+                final_clean = os.path.join(chunk_tmp, f"clean_{i}.mp4")
+                subprocess.run([
+                    "ffmpeg", "-y", "-ss", str(f_start), "-i", clip_out,
+                    "-t", str(args.chunk), "-c", "copy", final_clean
+                ], capture_output=True)
+                
+                return final_clean
 
             with ThreadPoolExecutor(max_workers=args.threads) as executor:
                 results = list(executor.map(process_chunk, chunk_indices))
@@ -164,7 +227,8 @@ def main():
                 tgt_lang=args.tgt_lang,
                 use_ocr=args.ocr,
                 output_path=args.output,
-                chunk_duration=20
+                chunk_duration=20,
+                clone_voice=args.clone_voice
             )
     finally:
         shutil.rmtree(tmp_dir)

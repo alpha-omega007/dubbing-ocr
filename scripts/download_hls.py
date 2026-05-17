@@ -7,6 +7,8 @@ Usage :
   python3 download_hls.py --url_template "https://gate-.../seg-{i}-v1-a1.ts?t=..." --output video.mp4
   python3 download_hls.py --url_template "..." --output video.mp4 --start 1 --threads 4
 """
+import warnings
+warnings.filterwarnings("ignore")
 
 import os
 import sys

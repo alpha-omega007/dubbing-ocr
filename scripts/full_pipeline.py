@@ -7,6 +7,8 @@ Usage :
     --hf_token hf_XXXXXXXXX \
     --lang fr
 """
+import warnings
+warnings.filterwarnings("ignore")
 
 import os
 import sys

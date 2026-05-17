@@ -16,6 +16,7 @@ import tempfile
 import shutil
 import gc
 import warnings
+warnings.filterwarnings("ignore")
 import time
 import threading
 import torch
@@ -702,7 +703,6 @@ def synthesize_edge(segments: list, output_dir: str, tgt_lang: str = "en") -> li
         import asyncio
 
     # Mappage voix Edge (Qualité Premium)
-    # fr-FR-HenriNeural (M), fr-FR-DeniseNeural (F)
     voices = {
         "fr": {"M": "fr-FR-HenriNeural", "F": "fr-FR-DeniseNeural"},
         "en": {"M": "en-US-GuyNeural",   "F": "en-US-AriaNeural"},
@@ -711,21 +711,45 @@ def synthesize_edge(segments: list, output_dir: str, tgt_lang: str = "en") -> li
     voice_set = voices.get(tgt_lang, voices["en"])
 
     async def _gen(text, voice, file, rate):
-        # rate format: "+0%", "-10%"
         r_str = f"{rate:+d}%" if isinstance(rate, int) else rate
         communicate = edge_tts.Communicate(text, voice, rate=r_str)
         await communicate.save(file)
 
     valid_segs = [(i, s) for i, s in enumerate(segments) if s.get("text", "").strip()]
     audio_segments = []
+    
+    use_fallback = False
+    tts_kokoro = None
+    voice_set_k = None
 
     with tqdm(total=len(valid_segs), desc="  🔊  Edge-TTS", unit="seg") as pbar:
         for count, (i, seg) in enumerate(valid_segs, 1):
             text   = seg["text"].strip()
             gender = seg.get("gender", "M")
-            voice  = voice_set.get(gender, voice_set["F"])
             
-            # Edge-TTS gère sa propre vitesse via 'rate'
+            if use_fallback:
+                try:
+                    voice_k = voice_set_k.get(gender, voice_set_k["F"])
+                    seg_duration = seg["end"] - seg["start"]
+                    estimated    = len(text) / 11.0
+                    speed        = max(0.8, min(1.25, estimated / seg_duration)) if seg_duration > 0 else 1.0
+                    
+                    out_file = os.path.join(output_dir, f"tts_{i:04d}.wav")
+                    samples, sample_rate = tts_kokoro.create(text, voice=voice_k, speed=speed)
+                    
+                    if gender == "M" and voice_k.startswith("ff_"):
+                         import librosa
+                         samples = librosa.effects.pitch_shift(samples, sr=sample_rate, n_steps=-4)
+                    
+                    import soundfile as sf
+                    sf.write(out_file, samples, sample_rate)
+                    audio_segments.append({"file": out_file, "start": seg["start"], "end": seg["end"], "gender": gender})
+                except Exception as fe:
+                    tqdm.write(f"  ⚠️  Erreur Fallback Kokoro seg {i}: {fe}")
+                pbar.update(1)
+                continue
+
+            voice  = voice_set.get(gender, voice_set["F"])
             seg_duration = seg["end"] - seg["start"]
             estimated    = len(text) / 13.0
             rate_val     = int(( (estimated / seg_duration) - 1.0 ) * 100) if seg_duration > 0 else 0
@@ -738,6 +762,53 @@ def synthesize_edge(segments: list, output_dir: str, tgt_lang: str = "en") -> li
                 audio_segments.append({"file": out_file, "start": seg["start"], "end": seg["end"], "gender": gender})
             except Exception as e:
                 tqdm.write(f"  ⚠️  Erreur Edge seg {i}: {e}")
+                tqdm.write(f"  🔄 Basculement automatique sur le moteur local et offline Kokoro...")
+                
+                try:
+                    def find_model(filename):
+                        for p in [filename,
+                                  os.path.join(os.path.dirname(os.path.abspath(__file__)), filename),
+                                  os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", filename),
+                                  os.path.expanduser(f"~/{filename}")]:
+                            if os.path.exists(p):
+                                return p
+                        return None
+
+                    onnx_path   = find_model("kokoro-v1.0.onnx")
+                    voices_path = find_model("voices-v1.0.bin")
+                    if not onnx_path or not voices_path:
+                        raise FileNotFoundError("Modèles Kokoro introuvables.")
+
+                    from kokoro_onnx import Kokoro
+                    import soundfile as sf
+                    
+                    tts_kokoro = Kokoro(onnx_path, voices_path)
+                    
+                    lang_voices = {
+                        "fr": {"M": "ff_siwis", "F": "ff_siwis"}, 
+                        "en": {"M": "am_adam",  "F": "af_sarah"},
+                        "ja": {"M": "jf_alpha", "F": "jf_alpha"},
+                        "zh": {"M": "zf_alpha", "F": "zf_alpha"},
+                    }
+                    voice_set_k = lang_voices.get(tgt_lang, lang_voices["en"])
+                    use_fallback = True
+                    
+                    voice_k = voice_set_k.get(gender, voice_set_k["F"])
+                    estimated    = len(text) / 11.0
+                    speed        = max(0.8, min(1.25, estimated / seg_duration)) if seg_duration > 0 else 1.0
+                    
+                    out_file = os.path.join(output_dir, f"tts_{i:04d}.wav")
+                    samples, sample_rate = tts_kokoro.create(text, voice=voice_k, speed=speed)
+                    
+                    if gender == "M" and voice_k.startswith("ff_"):
+                         import librosa
+                         samples = librosa.effects.pitch_shift(samples, sr=sample_rate, n_steps=-4)
+                    
+                    sf.write(out_file, samples, sample_rate)
+                    audio_segments.append({"file": out_file, "start": seg["start"], "end": seg["end"], "gender": gender})
+                except Exception as init_err:
+                    tqdm.write(f"  ❌ Impossible d'initialiser le fallback Kokoro : {init_err}")
+                    raise e
             pbar.update(1)
 
     return audio_segments
@@ -908,7 +979,7 @@ def main():
     parser.add_argument("--ocr",       action="store_true",
                         help="Utiliser l'OCR (VideoSubFinder + PaddleOCR) au lieu de Whisper")
     parser.add_argument("--gpu_limit", type=float, default=0.5,
-                        help="Limite de VRAM à utiliser (0.1 à 1.0). Défaut: 0.5 (50%)")
+                        help="Limite de VRAM à utiliser (0.1 à 1.0). Défaut: 0.5 (50%%)")
     args = parser.parse_args()
     AUDIO_CHUNK_S = args.chunk
 

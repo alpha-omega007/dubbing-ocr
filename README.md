@@ -106,6 +106,8 @@ python3 main.py --input video.mp4 --ocr --lang fr --chunk 20
 # Limiter l'usage GPU (ex: 25%) et utiliser Edge TTS (Cloud haute qualité)
 python3 main.py --input video.mp4 --gpu_limit 0.25 --tts-engine edge
 ```
+python3 main.py --input input/episode9.mp4 --ocr --lang fr --chunk 30 --gpu_limit 0.25 --tts-engine edge
+
 
 ### Téléchargement seul (sans doublage)
 

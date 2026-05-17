@@ -2,6 +2,7 @@ import os
 import subprocess
 import torch
 import whisper
+import librosa
 from tqdm import tqdm
 from core.interfaces.engines import ITranscriptionEngine
 from core.entities.models import Segment
@@ -20,8 +21,10 @@ class WhisperTranscriptionEngine(ITranscriptionEngine):
         self._load_model()
         
         # Determine total duration
-        import librosa
-        duration = librosa.get_duration(path=audio_path)
+        try:
+            duration = librosa.get_duration(path=audio_path)
+        except TypeError:
+            duration = librosa.get_duration(filename=audio_path)
         
         all_words = []
         for start in tqdm(range(0, int(duration), chunk_duration), desc="📝 Whisper Chunks"):

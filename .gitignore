@@ -1,6 +1,6 @@
 # Media and large files
 output/
-media/
+input/
 models/
 *.mp4
 *.wav

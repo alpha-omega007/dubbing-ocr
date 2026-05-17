@@ -46,12 +46,16 @@ class EasyOCREngine(IOCREngine):
             
             img_full_path = os.path.join(rgb_dir, img_name)
             ocr_result = reader.readtext(img_full_path)
-            text = " ".join([res[1] for res in ocr_result]).strip()
-            if text:
+            raw_text = " ".join([res[1] for res in ocr_result]).strip()
+            
+            # 3. Filtrer les caractères chinois (souvent présents dans les logos/watermarks)
+            clean_text = re.sub(r'[\u4e00-\u9fff]+', '', raw_text).strip()
+            
+            if clean_text:
                 segments.append(Segment(
                     start=parse_time(match.group(1)),
                     end=parse_time(match.group(2)),
-                    text=text
+                    text=clean_text
                 ))
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
